@@ -403,6 +403,17 @@ pub struct PcodeDisassembly {
     pub origin: VarnodeData,
 }
 
+/// Disassembly of an instruction block into pcode
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcodeDisassemblyBlock {
+    /// The disassembled instructions
+    pub instructions: Vec<Vec<PcodeInstruction>>,
+
+    /// The origin of the instructions
+    pub origin: VarnodeData,
+}
+
 /// Disassembly of an instruction into its native assembly
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -709,6 +720,42 @@ impl GhidraSleigh {
         }
 
         None
+    }
+
+    fn is_block_terminating_op(opcode: OpCode) -> bool {
+        use OpCode::*;
+        matches!(opcode, Branch | Call | BranchIndirect | CallIndirect | Return | BranchConditional)
+    }
+
+    pub fn disassemble_block_to_pcode(
+        &self,
+        loader: &dyn InstructionLoader,
+        address: Address,
+    ) -> Result<PcodeDisassemblyBlock> {
+        let mut address = address;
+        let mut instructions = Vec::new();
+        let mut orgin: Option<VarnodeData> = None;
+        loop {
+            let result = self.disassemble_pcode(loader, address.clone())?;
+            address.offset += result.origin.size as u64;
+            if result.instructions.is_empty() {
+                break;
+            }
+            let last_op = result.instructions.last().unwrap().op_code;
+            instructions.push(result.instructions);
+            match orgin {
+                None => orgin = Some(result.origin),
+                Some(ref mut origin) => origin.size += result.origin.size,
+            }
+
+            if Self::is_block_terminating_op(last_op) {
+                break;
+            }
+        }
+        Ok(PcodeDisassemblyBlock {
+            instructions,
+            origin: orgin.unwrap(),
+        })
     }
 }
 
