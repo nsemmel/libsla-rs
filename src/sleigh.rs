@@ -722,9 +722,17 @@ impl GhidraSleigh {
         None
     }
 
-    fn is_block_terminating_op(opcode: OpCode) -> bool {
+    fn is_block_terminating_op(pcode: &PcodeInstruction) -> bool {
         use OpCode::*;
-        matches!(opcode, Branch | Call | BranchIndirect | CallIndirect | Return | BranchConditional)
+        match pcode.op_code {
+            // Branch/Call/BranchConditionally only terminate if the input is _not_ in the constant
+            // address space, which indicates it's a pcode relative branch and not a "real" branch.
+            Branch | Call | BranchConditional =>
+                !pcode.inputs[0].address.address_space.is_constant(),
+            BranchIndirect | CallIndirect | Return =>
+                true,
+            _ => false,
+        }
     }
 
     pub fn disassemble_block_to_pcode(
@@ -741,14 +749,14 @@ impl GhidraSleigh {
             if result.instructions.is_empty() {
                 break;
             }
-            let last_op = result.instructions.last().unwrap().op_code;
+            let last = result.instructions.last().unwrap();
+            let terminates = Self::is_block_terminating_op(last);
             instructions.push(result.instructions);
             match orgin {
                 None => orgin = Some(result.origin),
                 Some(ref mut origin) => origin.size += result.origin.size,
             }
-
-            if Self::is_block_terminating_op(last_op) {
+            if terminates {
                 break;
             }
         }
