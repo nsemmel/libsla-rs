@@ -739,12 +739,14 @@ impl GhidraSleigh {
         &self,
         loader: &dyn InstructionLoader,
         address: Address,
-    ) -> Result<PcodeDisassemblyBlock> {
+    ) -> Result<(PcodeDisassemblyBlock, Vec<(u64, String)>)> {
         let mut address = address;
         let mut instructions = Vec::new();
+        let mut native = Vec::new();
         let mut orgin: Option<VarnodeData> = None;
         loop {
             let result = self.disassemble_pcode(loader, address.clone())?;
+            let native_result = self.disassemble_native(loader, address.clone())?;
             address.offset += result.origin.size as u64;
             if result.instructions.is_empty() {
                 break;
@@ -752,6 +754,7 @@ impl GhidraSleigh {
             let last = result.instructions.last().unwrap();
             let terminates = Self::is_block_terminating_op(last);
             instructions.push(result.instructions);
+            native.push((native_result.origin.address.offset, native_result.instruction.to_string()));
             match orgin {
                 None => orgin = Some(result.origin),
                 Some(ref mut origin) => origin.size += result.origin.size,
@@ -760,10 +763,10 @@ impl GhidraSleigh {
                 break;
             }
         }
-        Ok(PcodeDisassemblyBlock {
+        Ok((PcodeDisassemblyBlock {
             instructions,
             origin: orgin.unwrap(),
-        })
+        }, native))
     }
 }
 
